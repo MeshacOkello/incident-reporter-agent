@@ -1,0 +1,6 @@
+{
+  "name": "amplify-to-webhook",
+  "version": "1.0.0",
+  "description": "Forwards Amplify/CloudWatch alerts to Incident Response Agent",
+  "main": "index.js"
+}
