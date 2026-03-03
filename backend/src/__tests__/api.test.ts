@@ -30,8 +30,10 @@ beforeAll(() => {
   server = app.listen(0);
 });
 
-afterAll((done) => {
-  server.close(done);
+afterAll(() => {
+  return new Promise<void>((resolve, reject) => {
+    server.close((err) => (err ? reject(err) : resolve()));
+  });
 });
 
 beforeEach(() => {

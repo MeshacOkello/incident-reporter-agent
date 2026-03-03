@@ -23,8 +23,10 @@ const WebhookSchema = z.object({
   timestamp: z.string().optional(),
 }).passthrough();
 
+type WebhookPayload = z.infer<typeof WebhookSchema>;
+
 export async function handleWebhook(body: unknown): Promise<{ incidentId: string }> {
-  const payload = WebhookSchema.parse(body ?? {}) as AlertPayload;
+  const payload = WebhookSchema.parse(body ?? {}) as WebhookPayload;
 
   const incidentId = randomUUID();
   const alertTime = payload.timestamp ? new Date(payload.timestamp) : new Date();
@@ -32,17 +34,19 @@ export async function handleWebhook(body: unknown): Promise<{ incidentId: string
 
   // 1. Fetch deployments (appId from payload for Amplify events, or env)
   const appId = payload.appId ?? process.env.AWS_AMPLIFY_APP_ID;
-  const branchName = payload.branchName ?? process.env.GITHUB_BRANCH ?? 'main';
-  const deployments = await fetchRecentDeployments(appId, payload.region);
+  const branchName = (payload.branchName ?? process.env.GITHUB_BRANCH ?? 'main') as string;
+  const deployments = await fetchRecentDeployments(appId, payload.region as string | undefined);
 
   // 2. Fetch Amplify build failure details (actual error from failed steps)
   let buildFailure: Awaited<ReturnType<typeof fetchAmplifyJobDetails>> = null;
-  if (appId && branchName && payload.jobId) {
-    buildFailure = await fetchAmplifyJobDetails(appId, branchName, payload.jobId);
+  const jobId = payload.jobId;
+  if (appId && branchName && typeof jobId === 'string') {
+    buildFailure = await fetchAmplifyJobDetails(appId, branchName, jobId);
   }
 
   // 3. Fetch GitHub commits (per-app override from payload, else env)
-  const repo = (payload.githubRepo ?? process.env.GITHUB_REPO ?? 'owner/repo').replace(/^https:\/\/github\.com\//, '').replace(/\/$/, '');
+  const repoRaw = payload.githubRepo ?? process.env.GITHUB_REPO ?? 'owner/repo';
+  const repo = String(repoRaw).replace(/^https:\/\/github\.com\//, '').replace(/\/$/, '');
   const commits = await fetchRecentCommits(
     repo,
     branchName,
@@ -73,7 +77,7 @@ export async function handleWebhook(body: unknown): Promise<{ incidentId: string
   // 6. LLM analysis (with real build failure + commit diff for specific insights)
   const { analysis, slackSummary, suggestedActions } = await analyzeIncident(
     payload.message,
-    payload.source,
+    payload.source as 'aws' | 'cloudwatch' | 'amplify' | 'generic',
     deployments,
     commits,
     metrics,
@@ -92,7 +96,7 @@ export async function handleWebhook(body: unknown): Promise<{ incidentId: string
     service: payload.service,
     alertMessage: payload.message,
     alertSource: payload.source,
-    alertPayload: payload,
+    alertPayload: payload as AlertPayload,
     deployments,
     commits,
     metricsSummary: metrics,
@@ -112,7 +116,7 @@ export async function handleWebhook(body: unknown): Promise<{ incidentId: string
   return { incidentId };
 }
 
-function inferSeverity(payload: AlertPayload): IncidentSeverity {
+function inferSeverity(payload: WebhookPayload): IncidentSeverity {
   const msg = (payload.message ?? '').toLowerCase();
   if (msg.includes('critical') || msg.includes('outage')) return 'critical';
   if (msg.includes('error') || msg.includes('failed')) return 'high';
