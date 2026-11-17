@@ -1,0 +1,20 @@
+version: 1
+applications:
+  - appRoot: frontend
+    frontend:
+      buildPath: /
+      phases:
+        preBuild:
+          commands:
+            - npm install --workspace=incident-response-frontend
+        build:
+          commands:
+            - npm run build --workspace=incident-response-frontend
+      artifacts:
+        baseDirectory: frontend/dist
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
+          - frontend/node_modules/**/*
